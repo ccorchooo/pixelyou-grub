@@ -63,7 +63,7 @@ The logos come from a [Nerd Font](https://www.nerdfonts.com/) if one is installe
 
 ## Notes and limits
 
-- **Resolution has to match.** GRUB stretches the background but places the menu in absolute pixels. If your firmware can't set the generated mode, check `videoinfo` in the GRUB console and regenerate with `-r`.
+- **Resolution:** generate the theme on the machine that will boot it, so it matches that screen. All positions are proportional, so the layout still lines up if GRUB runs at a different mode. Text and icons keep their pixel size, though, so on a bigger screen they look smaller and on a smaller one bigger. To check what GRUB really uses, press `c` at the boot menu and run `videoinfo`; the current mode is marked with `*`. Then reinstall with `-r WxH` if it differs. Detection uses the kernel's mode list and falls back to the monitor's EDID. With several monitors it uses the first one and prints a note.
 - **Fonts:** Google Sans is used if installed, then Inter, Adwaita Sans, Roboto, Noto Sans and DejaVu. Use `--font` to pick one. GRUB draws text without anti-aliasing, so menu text looks crisper and harder-edged than the text baked into the background.
 - **Colours** approximate Material's HCT: OKLCH hue and chroma, solved to the exact CIELAB L\* tone. Contrast follows Material's tone ladder, but hues can differ slightly from Android's.
 - Entries such as *UEFI Firmware Settings* and *Advanced options* have no `--class`, so they get no icon.

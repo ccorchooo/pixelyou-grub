@@ -301,6 +301,7 @@ def layout(W, H, zoom=1.0):
     L["font_item"] = round(24 * s)
     L["font_small"] = round(18 * s)
     L["font_term"] = round(18 * s)
+    L["term_r"] = L["win_r"]  # console box = window outline
     return L
 
 # ───────────────────────────── background ─────────────────────────────
@@ -454,11 +455,21 @@ def nine_slice(r, color, prefix, out, border=None):
 
 # ───────────────────────────── theme.txt ─────────────────────────────
 
+def rel(v, D):
+    """GRUB proportional spec ("P%+px"): exact at the generated resolution and it
+    follows the stretched background if GRUB ends up in a different mode."""
+    p = int(v * 100 // D)
+    return f'"{p}%{v - round(p * D / 100):+d}"'
+
 def theme_txt(W, H, L, pal, fn):
     mx, my, mw, mh = L["menu"]
     bx, by, bw, bh = L["bar"]
     s = L["s"]
-    term_w, term_h = round(W * 0.7), round(H * 0.7)
+    # console (also shows "Loading Linux…" while booting) sits exactly on the window
+    wx, wy, ww, wh = L["win"]
+    tr = L["term_r"]
+    X = lambda v: rel(v, W)
+    Y = lambda v: rel(v, H)
     return f"""# Pixel You — Material You GRUB theme (generated for {W}x{H})
 title-text: ""
 desktop-image: "background.png"
@@ -468,17 +479,17 @@ message-font: "{fn['small']}"
 message-color: "{hexc(pal['on_surface'])}"
 terminal-font: "{fn['term']}"
 terminal-box: "terminal_box_*.png"
-terminal-left: "{(W - term_w) // 2}"
-terminal-top: "{(H - term_h) // 2}"
-terminal-width: "{term_w}"
-terminal-height: "{term_h}"
+terminal-left: {X(wx + tr)}
+terminal-top: {Y(wy + tr)}
+terminal-width: {X(ww - 2 * tr)}
+terminal-height: {Y(wh - 2 * tr)}
 terminal-border: "0"
 
 + boot_menu {{
-  left = {mx}
-  top = {my}
-  width = {mw}
-  height = {mh}
+  left = {X(mx)}
+  top = {Y(my)}
+  width = {X(mw)}
+  height = {Y(mh)}
   item_font = "{fn['item']}"
   item_color = "{hexc(pal['on_surface'])}"
   selected_item_font = "{fn['item']}"
@@ -500,9 +511,9 @@ terminal-border: "0"
 
 + label {{
   id = "__timeout__"
-  left = {bx}
-  top = {L['timeout_y']}
-  width = {bw}
+  left = {X(bx)}
+  top = {Y(L['timeout_y'])}
+  width = {X(bw)}
   height = {round(28 * s)}
   align = "left"
   font = "{fn['small']}"
@@ -512,9 +523,9 @@ terminal-border: "0"
 
 + progress_bar {{
   id = "__timeout__"
-  left = {bx}
-  top = {by}
-  width = {bw}
+  left = {X(bx)}
+  top = {Y(by)}
+  width = {X(bw)}
   height = {bh}
   show_text = false
   bar_style = "progress_track_*.png"
@@ -561,16 +572,40 @@ def render_preview(theme_dir, bg, W, H, L, pal, fonts):
 
 # ───────────────────────────── main ─────────────────────────────
 
+def _edid_mode(path):
+    """Preferred mode from the first detailed timing descriptor of an EDID blob."""
+    try:
+        e = open(path, "rb").read()
+    except OSError:
+        return None
+    if len(e) < 128 or e[:8] != b"\x00\xff\xff\xff\xff\xff\xff\x00" or e[54] == e[55] == 0:
+        return None
+    w = e[56] | (e[58] >> 4) << 8
+    h = e[59] | (e[61] >> 4) << 8
+    return f"{w}x{h}" if w and h else None
+
 def detect_resolution():
+    """Native mode of each connected display (kernel mode list, else EDID)."""
     import glob
+    found = []
     for status in sorted(glob.glob("/sys/class/drm/*/status")):
+        conn = os.path.dirname(status)
         try:
             if open(status).read().strip() != "connected": continue
-            mode = open(os.path.join(os.path.dirname(status), "modes")).readline().strip()
-            if "x" in mode: return mode
+            mode = open(os.path.join(conn, "modes")).readline().strip()
         except OSError:
-            pass
-    return "1920x1080"
+            mode = ""
+        mode = mode if "x" in mode else _edid_mode(os.path.join(conn, "edid"))
+        if mode:
+            found.append((os.path.basename(conn).split("-", 1)[-1], mode.split("i")[0]))
+    if not found:
+        print("note: couldn't detect the display resolution; using 1920x1080 (pass -r WxH)",
+              file=sys.stderr)
+        return "1920x1080"
+    if len({m for _, m in found}) > 1:
+        print("note: several displays: " + ", ".join(f"{c} {m}" for c, m in found)
+              + f"; using {found[0][1]} (pass -r WxH for another)", file=sys.stderr)
+    return found[0][1]
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -627,7 +662,7 @@ def main():
     sw = max(4, round(6 * L["s"])) // 2 * 2
     pill_caps_vertical(sw, pal["surface_container_highest"], "scroll_track", out)
     pill_caps_vertical(sw, pal["outline"], "scroll_thumb", out)
-    nine_slice(round(24 * L["s"]), pal["surface_container"], "terminal_box", out,
+    nine_slice(L["term_r"], pal["surface_container"], "terminal_box", out,
                border=pal["outline_variant"])
 
     for cls in NF:
